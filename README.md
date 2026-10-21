@@ -12,6 +12,7 @@
 | Elasticsearch | 7.17.29 |
 | Kibana | 7.17.29 |
 | Logstash | 7.17.29 |
+| Filebeat | 7.17.29 |
 | Nginx | 1.24.0 (порт 8081 — 80 занят HAProxy с прошлого ДЗ) |
 
 Все компоненты установлены из официального apt-репозитория Elastic (`https://artifacts.elastic.co/packages/7.x/apt`).
@@ -100,3 +101,52 @@ output {
 Логи Nginx в Kibana (Discover, index pattern `nginx-access-logstash-*`):
 
 ![nginx logs via logstash](img/03-kibana-nginx-logstash.png)
+
+---
+
+## Задание 4. Filebeat
+
+Logstash остановлен (`systemctl disable --now logstash`), поставка логов nginx переключена на Filebeat
+с модулем `nginx` — разбор строк лога делает ingest pipeline модуля прямо в Elasticsearch.
+
+`/etc/filebeat/filebeat.yml` ([config/filebeat.yml](config/filebeat.yml)):
+
+```yaml
+filebeat.config.modules:
+  path: ${path.config}/modules.d/*.yml
+  reload.enabled: false
+
+fields:
+  shipper: filebeat
+fields_under_root: true
+
+setup.kibana:
+  host: "127.0.0.1:5601"
+
+output.elasticsearch:
+  hosts: ["127.0.0.1:9200"]
+```
+
+`/etc/filebeat/modules.d/nginx.yml` ([config/filebeat-nginx-module.yml](config/filebeat-nginx-module.yml)):
+
+```yaml
+- module: nginx
+  access:
+    enabled: true
+    var.paths: ["/var/log/nginx/hw-access.log"]
+  error:
+    enabled: false
+  ingress_controller:
+    enabled: false
+```
+
+```bash
+filebeat modules enable nginx
+filebeat test config
+filebeat setup --index-management --pipelines --modules nginx
+systemctl enable --now filebeat
+```
+
+Логи Nginx, отправленные через Filebeat (index pattern `filebeat-*`, поля `agent.type` и `shipper` = `filebeat`):
+
+![nginx logs via filebeat](img/04-kibana-nginx-filebeat.png)
